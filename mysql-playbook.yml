@@ -1,0 +1,86 @@
+- hosts: client1
+  become: yes
+  become_method: sudo
+  vars:   
+     mysql_root_password: welcome123
+  tasks:
+  - name: "apt-get update"
+    apt:
+      update_cache: yes
+      cache_valid_time: 3600
+  - name: Install the MySQL packages
+    apt: 
+     name={{ item }} 
+     state=present 
+     update_cache=yes
+    with_items:
+     - mysql-server-8.0
+     - mysql-client-8.0
+     - python3-pip
+     - libmysqlclient-dev
+     - python3-dev
+     - python3-mysqldb
+     - expect
+       #- name: Copy the configuration file (my.cnf)
+       #template: 
+       #src=my.cnf.j2 
+       #dest=/etc/mysql/my.cnf
+       #notify: Restart MySQL
+  - name: Run expect for mysql_secure_installation
+    shell: |
+     set timeout 300
+     spawn sudo mysql_secure_installation
+     expect "Press y|Y for Yes, any other key for No: "
+     send "n\n"
+     expect "New password:"
+     send "test\n"
+     expect "Re-enter new password:"
+     send "test\n"
+     expect "Remove anonymous users? (Press y|Y for Yes, any other key for No) : "
+     send "y\n"
+     expect "Disallow root login remotely? (Press y|Y for Yes, any other key for No) : "
+     send "n\n"
+     expect "Remove test database and access to it? (Press y|Y for Yes, any other key for No) : "
+     send "y\n"
+     expect "Reload privilege tables now? (Press y|Y for Yes, any other key for No) : "
+     send "y\n"
+     exit 0
+    args:
+      executable: /usr/bin/expect
+  - name: update mysql root password for all root accounts  
+    mysql_user:  
+         name: root  
+         host: "{{ item }}"  
+         password: "{{ mysql_root_password }}"  
+         login_user: root  
+         login_password: "{{ mysql_root_password }}"  
+         check_implicit_admin: yes  
+         priv: "*.*:ALL,GRANT"  
+    with_items:  
+        - "{{ ansible_hostname }}"  
+        - 127.0.0.1  
+        - ::1  
+        - localhost   
+  - name: create a new database  
+    mysql_db: 
+         name=ejabberd_19 
+         state=present 
+         login_user=root 
+         login_password="{{ mysql_root_password }}"  
+  - name: add sample data to database  
+    copy: 
+     src=ejabberd_19.sql 
+     dest=/tmp/ejabberd_19.sql  
+  - name: insert sample data into database  
+    mysql_db: 
+         name=ejabberd_19 
+         state=import 
+         target=/tmp/ejabberd_19.sql 
+         login_user=root 
+         login_password="{{ mysql_root_password }}"		
+  handlers:
+   - name: Restart MySQL
+     service:
+       name: mysql
+       state: restarted
+
